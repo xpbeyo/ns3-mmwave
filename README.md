@@ -29,6 +29,11 @@ cd ns3-mmwave
 ./waf configure --disable-python --enable-examples && ./waf build
 ```
 
+With newer versions of compilers use `--disable-werror` flag to stop compilers treating warnings as errors. Since some of the code will cause warnings. To build the module run
+```
+./waf configure --disable-python --enable-examples --disable-werror && ./waf build
+```
+
 ## Usage example
 You can use the following command to run the `mmwave-simple-epc` example. 
 ```
