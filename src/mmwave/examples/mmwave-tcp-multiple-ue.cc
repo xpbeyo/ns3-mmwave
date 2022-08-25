@@ -168,6 +168,11 @@ CwndChange (Ptr<OutputStreamWrapper> stream, uint32_t oldCwnd, uint32_t newCwnd)
 int
 main (int argc, char *argv[])
 {
+  LogComponentEnable("Tcp5G", LOG_DEBUG);
+  LogComponentEnable("TcpCongestionOps", LOG_INFO);
+  LogComponentEnable("TcpCubic", LOG_INFO);
+  // LogComponentEnable("TcpSocketBase", LOG_DEBUG);
+
   Config::SetDefault ("ns3::LteRlcUm::MaxTxBufferSize", UintegerValue (10 * 1024 * 1024));
   Config::SetDefault ("ns3::LteRlcAm::MaxTxBufferSize", UintegerValue (10 * 1024 * 1024));
   Config::SetDefault ("ns3::LteRlcUmLowLat::MaxTxBufferSize", UintegerValue (10 * 1024 * 1024));
@@ -319,7 +324,7 @@ main (int argc, char *argv[])
   for (int i = 0; i < nUEs; i++)
   {
     Ptr<MyApp> app = CreateObject<MyApp> ();
-    app->Setup (ns3TcpSockets[i], sinkAddresses[i], 1400, 500000, DataRate ("1Gb/s"));
+    app->Setup (ns3TcpSockets[i], sinkAddresses[i], 1400, 50000, DataRate ("2Gb/s"));
     remoteHost->AddApplication (app);
 
     app->SetStartTime (Seconds (0.1));

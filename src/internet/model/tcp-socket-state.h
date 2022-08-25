@@ -188,6 +188,7 @@ public:
 
   TracedValue<uint32_t>  m_bytesInFlight {0};        //!< Bytes in flight
   TracedValue<Time>      m_lastRtt {Seconds (0.0)};  //!< Last RTT sample collected
+  TracedValue<Time>      m_lastRttVar {Seconds (0.0)};  //!< Last RTT sample collected
 
   Ptr<TcpRxBuffer>       m_rxBuffer;                 //!< Rx buffer (reordering buffer)
 

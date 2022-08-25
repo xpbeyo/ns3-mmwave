@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014 Natale Patriciello <natale.patriciello@gmail.com>
+ * Copyright (c) 2015 Natale Patriciello <natale.patriciello@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,56 +16,19 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  */
-
 #ifndef TCP5G_H
 #define TCP5G_H
 
 #include "ns3/tcp-congestion-ops.h"
-#include "ns3/tcp-socket-base.h"
-
+#include "ns3/nstime.h"
+#include "ns3/simulator.h"
+#include "ns3/random-variable-stream.h"
+#include <algorithm>
+#include "math.h"
 
 namespace ns3 {
-
 /**
- * \brief The Cubic Congestion Control Algorithm
- *
- * TCP Cubic is a protocol that enhances the fairness property
- * of Bic while retaining its scalability and stability. The main feature is
- * that the window growth function is defined in real time in order to be independent
- * from the RTT. More specifically, the congestion window of Cubic is determined
- * by a function of the elapsed time from the last window reduction.
- *
- * The Cubic code is quite similar to that of Bic.
- * The main difference is located in the method Update, an edit
- * necessary for satisfying the Cubic window growth, that can be tuned with
- * the attribute C (the Cubic scaling factor).
- *
- * Following the Linux implementation, we included the Hybrid Slow Start,
- * that effectively prevents the overshooting of slow start
- * while maintaining a full utilization of the network. This new type of slow
- * start can be disabled through the \Attribute{HyStart} attribute.
- *
- * CUBIC TCP is implemented and used by default in Linux kernels 2.6.19
- * and above; this version follows the implementation in Linux 3.14, which
- * slightly differ from the CUBIC paper. It also features HyStart.
- *
- * Home page:
- *      http://netsrv.csc.ncsu.edu/twiki/bin/view/Main/BIC
- * The work starts from the implementation of CUBIC TCP in
- * Sangtae Ha, Injong Rhee and Lisong Xu,
- * "CUBIC: A New TCP-Friendly High-Speed TCP Variant"
- * in ACM SIGOPS Operating System Review, July 2008.
- * Available from:
- *  http://netsrv.csc.ncsu.edu/export/cubic_a_new_tcp_2008.pdf
- *
- * CUBIC integrates a new slow start algorithm, called HyStart.
- * The details of HyStart are presented in
- *  Sangtae Ha and Injong Rhee,
- *  "Taming the Elephants: New TCP Slow Start", NCSU TechReport 2008.
- * Available from:
- *  http://netsrv.csc.ncsu.edu/export/hystart_techreport_2008.pdf
- *
- * More information on this implementation: http://dl.acm.org/citation.cfm?id=2756518
+ * \brief The 5G implementation
  */
 class Tcp5G : public TcpCongestionOps
 {
@@ -77,97 +40,69 @@ public:
   static TypeId GetTypeId (void);
 
   Tcp5G ();
+
+  /**
+   * \brief Copy constructor.
+   * \param sock object to copy.
+   */
   Tcp5G (const Tcp5G& sock);
 
-  virtual std::string GetName () const;
-  virtual void PktsAcked (Ptr<TcpSocketState> tcb, uint32_t segmentsAcked, const Time& rtt);
+  ~Tcp5G ();
+
+  std::string GetName () const;
+
   virtual void IncreaseWindow (Ptr<TcpSocketState> tcb, uint32_t segmentsAcked);
-  virtual uint32_t GetSsThresh (Ptr<const TcpSocketState> tcb, uint32_t bytesInFlight);
+  virtual uint32_t GetSsThresh (Ptr<const TcpSocketState> tcb,
+                                uint32_t bytesInFlight);
   virtual void ReduceCwnd (Ptr<TcpSocketState> tcb);
-  virtual void CongestionStateSet (Ptr<TcpSocketState> tcb,
-                                   const TcpSocketState::TcpCongState_t newState);
-
   virtual Ptr<TcpCongestionOps> Fork ();
+  virtual void CwndEvent (Ptr<TcpSocketState> tcb,
+                          const TcpSocketState::TcpCAEvent_t event);
+
+  typedef enum {
+    PERIODIC_UPDATE,
+    PER_PACKET_UPDATE
+  } update_type;
+
+protected:
+  virtual uint32_t SlowStart (Ptr<TcpSocketState> tcb, uint32_t segmentsAcked);
+  virtual void CongestionAvoidance (Ptr<TcpSocketState> tcb, uint32_t segmentsAcked);
+
+  Time current_delay;
+  Time delay_var;
+  Time min_rtt;
+
+  // Periodic update variables
+  bool m_periodicUpdateStarted {false};
+  Time report_period {MicroSeconds(20)};
+  virtual void PeriodicUpdate(Ptr<TcpSocketState> tcb);
+
+  // Per packet update
+  bool m_updateStarted {false};
+  Time m_lastUpdateTime;
+  virtual void UpdateState(Ptr<TcpSocketState> tcb);
 
 private:
-  /**
-   * \brief Values to detect the Slow Start mode of HyStart
-   */
-  enum HybridSSDetectionMode
-  {
-    PACKET_TRAIN = 0x1, //!< Detection by trains of packet
-    DELAY        = 0x2  //!< Detection by delay value
-  };
+  update_type m_updateType {PER_PACKET_UPDATE};
+  float rtt_threshold_factor {0};
+  Time bad_delay {MicroSeconds(20000)}; // In milliseconds
+  double delay_derivative {0.0};
+  Time prev_delay;
+  Time predicted_queueing_delay;
+  bool future_cat {false};
+  double safe_zone {0.0};
+  double future_safezone {0.0};
 
-  bool     m_fastConvergence;  //!< Enable or disable fast convergence algorithm
-  double   m_beta;             //!< Beta for cubic multiplicative increase
+  int target_ratio {150};
+  double m_delayMean {0};
+  int m_cwndSum {0};
+  double m_cwndMean {0};
+  int m_cwndCount;
 
-  bool     m_hystart;          //!< Enable or disable HyStart algorithm
-  int      m_hystartDetect;    //!< Detect way for HyStart algorithm \see HybridSSDetectionMode
-  uint32_t m_hystartLowWindow; //!< Lower bound cWnd for hybrid slow start (segments)
-  Time     m_hystartAckDelta;  //!< Spacing between ack's indicating train
-  Time     m_hystartDelayMin;  //!< Minimum time for hystart algorithm
-  Time     m_hystartDelayMax;  //!< Maximum time for hystart algorithm
-  uint8_t  m_hystartMinSamples; //!< Number of delay samples for detecting the increase of delay
-
-  uint32_t m_initialCwnd;      //!< Initial cWnd
-  uint8_t  m_cntClamp;         //!< Modulo of the (avoided) float division for cWnd
-
-  double   m_c;                //!< Cubic Scaling factor
-
-  // Cubic parameters
-  uint32_t     m_cWndCnt;         //!<  cWnd integer-to-float counter
-  uint32_t     m_lastMaxCwnd;     //!<  Last maximum cWnd
-  uint32_t     m_bicOriginPoint;  //!<  Origin point of bic function
-  double       m_bicK;            //!<  Time to origin point from the beginning
-                                  //    of the current epoch (in s)
-  Time         m_delayMin;        //!<  Min delay
-  Time         m_epochStart;      //!<  Beginning of an epoch
-  bool         m_found;           //!<  The exit point is found?
-  Time         m_roundStart;      //!<  Beginning of each round
-  SequenceNumber32   m_endSeq;    //!<  End sequence of the round
-  Time         m_lastAck;         //!<  Last time when the ACK spacing is close
-  Time         m_cubicDelta;      //!<  Time to wait after recovery before update
-  Time         m_currRtt;         //!<  Current Rtt
-  uint32_t     m_sampleCnt;       //!<  Count of samples for HyStart
-  bool         m_factorMultiStarted;
-
-private:
-  /**
-   * \brief Reset HyStart parameters
-   */
-  void HystartReset (Ptr<const TcpSocketState> tcb);
-
-  void CubicReset (Ptr<const TcpSocketState> tcb);
-
-  /**
-   * \brief Cubic window update after a new ack received
-   */
-  uint32_t Update (Ptr<TcpSocketState> tcb);
-
-  /**
-   * \brief Update HyStart parameters
-   *
-   * \param tcb Transmission Control Block of the connection
-   * \param delay Delay for HyStart algorithm
-   */
-  void HystartUpdate (Ptr<TcpSocketState> tcb, const Time &delay);
-
-  /**
-   * \brief Clamp time value in a range
-   *
-   * The returned value is t, clamped in a range specified
-   * by attributes (HystartDelayMin < t < HystartDelayMax)
-   *
-   * \param t Time value to clamp
-   * \return t itself if it is in range, otherwise the min or max
-   * value
-   */
-  Time HystartDelayThresh (const Time &t) const;
-
-  void TimesCwnd(Ptr<TcpSocketState> tcb);
+  bool m_logStarted;
+  void LogState (Ptr<TcpSocketState> tcb);
 };
 
 } // namespace ns3
 
-#endif // TCPCUBIC_H
+#endif // TCP5G_H

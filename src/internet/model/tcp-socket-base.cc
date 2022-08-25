@@ -1950,7 +1950,7 @@ TcpSocketBase::ProcessAck(const SequenceNumber32 &ackNumber, bool scoreboardUpda
           m_congestionControl->PktsAcked (m_tcb, segsAcked, m_tcb->m_lastRtt);
           m_congestionControl->IncreaseWindow (m_tcb, segsAcked);
 
-          NS_LOG_DEBUG (" Cong Control Called, cWnd=" << m_tcb->m_cWnd <<
+          NS_LOG_DEBUG (" Congestion Control Called - LOSS, cWnd=" << m_tcb->m_cWnd <<
                         " ssTh=" << m_tcb->m_ssThresh);
           if (!m_sackEnabled)
             {
@@ -2053,6 +2053,10 @@ TcpSocketBase::ProcessAck(const SequenceNumber32 &ackNumber, bool scoreboardUpda
 
               m_tcb->m_cWndInfl = m_tcb->m_cWnd;
 
+              NS_LOG_DEBUG ("Congestion control called - fast recovery: " <<
+                            " cWnd: " << m_tcb->m_cWnd <<
+                            " ssTh: " << m_tcb->m_ssThresh <<
+                            " segsAcked: " << segsAcked);
               NS_LOG_LOGIC ("Congestion control called: " <<
                             " cWnd: " << m_tcb->m_cWnd <<
                             " ssTh: " << m_tcb->m_ssThresh <<
@@ -3456,6 +3460,7 @@ TcpSocketBase::EstimateRtt (const TcpHeader& tcpHeader)
       // RFC 6298, clause 2.4
       m_rto = Max (m_rtt->GetEstimate () + Max (m_clockGranularity, m_rtt->GetVariation () * 4), m_minRto);
       m_tcb->m_lastRtt = m_rtt->GetEstimate ();
+      m_tcb->m_lastRttVar = m_rtt->GetVariation ();
       m_tcb->m_minRtt = std::min (m_tcb->m_lastRtt.Get (), m_tcb->m_minRtt);
       NS_LOG_INFO (this << m_tcb->m_lastRtt << m_tcb->m_minRtt);
     }
@@ -4251,6 +4256,15 @@ void
 TcpSocketBase::UpdateSsThresh (uint32_t oldValue, uint32_t newValue)
 {
   m_ssThTrace (oldValue, newValue);
+  std::cout <<
+    "Time " <<
+    Simulator::Now() <<
+    ",ssThresh Changed" <<
+    ",oldValue " <<
+    oldValue <<
+    ",newValue " <<
+    newValue
+    << std::endl;
 }
 
 void

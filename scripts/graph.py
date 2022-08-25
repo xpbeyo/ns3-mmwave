@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
+
 def read_trace(file_path, file_type):
     if (file_type == "DlPdcpStats"):
         file = open(file_path)
@@ -115,4 +116,4 @@ if __name__ == "__main__":
     plt.xlabel("Time(s)")
     plt.ylabel("Mb/s")
     plt.legend()
-    plt.show()
+    plt.savefig('throughput.png')

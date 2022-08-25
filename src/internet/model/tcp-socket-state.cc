@@ -72,6 +72,10 @@ TcpSocketState::GetTypeId (void)
                      "Last RTT sample",
                      MakeTraceSourceAccessor (&TcpSocketState::m_lastRtt),
                      "ns3::TracedValueCallback::Time")
+    .AddTraceSource ("RTTVar",
+                     "Last RTT variance sample",
+                     MakeTraceSourceAccessor (&TcpSocketState::m_lastRttVar),
+                     "ns3::TracedValueCallback::Time")
   ;
   return tid;
 }
@@ -96,6 +100,7 @@ TcpSocketState::TcpSocketState (const TcpSocketState &other)
     m_minRtt (other.m_minRtt),
     m_bytesInFlight (other.m_bytesInFlight),
     m_lastRtt (other.m_lastRtt),
+    m_lastRttVar (other.m_lastRttVar),
     m_ecnMode (other.m_ecnMode),
     m_useEcn (other.m_useEcn)
 {
