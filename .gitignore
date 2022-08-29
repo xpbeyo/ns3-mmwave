@@ -42,3 +42,4 @@ build/
 /.project
 .vscode/settings.json
 env
+.vscode

@@ -168,17 +168,42 @@ CwndChange (Ptr<OutputStreamWrapper> stream, uint32_t oldCwnd, uint32_t newCwnd)
 int
 main (int argc, char *argv[])
 {
-  LogComponentEnable("Tcp5G", LOG_DEBUG);
-  LogComponentEnable("TcpCongestionOps", LOG_INFO);
-  LogComponentEnable("TcpCubic", LOG_INFO);
-  // LogComponentEnable("TcpSocketBase", LOG_DEBUG);
+  double stopTime = 5.9;
+  double simStopTime = 7.00;
+  int nEnbs = 1;
+  int nUEs = 1;
+  double totalBandwidth = 500e6;
+  double frequency0 = 28e9;
+  std::string congControl = "TcpCubic";
+  bool logging = true;
+  Ipv4Address remoteHostAddr;
+
+  // Command line arguments
+  CommandLine cmd;
+  cmd.AddValue("numUEs", "Number of UEs", nUEs);
+  cmd.AddValue("numEnbs", "Number of EnodeBs", nEnbs);
+  cmd.AddValue("CongControl", "Congestion control to use", congControl);
+  cmd.AddValue("log", "Enable logging", logging);
+  cmd.Parse (argc, argv);
+
+  if (logging)
+  {
+    LogComponentEnable("Tcp5G", LOG_INFO);
+    // TcpNewReno is under the base class TcpCongestionOps
+    LogComponentEnable("TcpCongestionOps", LOG_INFO);
+    LogComponentEnable("TcpCubic", LOG_INFO);
+  }
+
+  // Set directory for traces
+  Config::SetDefault("ns3::MmWaveBearerStatsCalculator::DlPdcpOutputFilename", StringValue("scripts/traces/" + congControl + "/DlPdcpStats.txt"));
 
   Config::SetDefault ("ns3::LteRlcUm::MaxTxBufferSize", UintegerValue (10 * 1024 * 1024));
   Config::SetDefault ("ns3::LteRlcAm::MaxTxBufferSize", UintegerValue (10 * 1024 * 1024));
   Config::SetDefault ("ns3::LteRlcUmLowLat::MaxTxBufferSize", UintegerValue (10 * 1024 * 1024));
   
   // TCP settings
-  Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (TcpCubic::GetTypeId ()));
+  TypeId congControlTypeId = TypeId::LookupByName("ns3::" + congControl);
+  Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (congControlTypeId));
   Config::SetDefault ("ns3::TcpSocketBase::MinRto", TimeValue (MilliSeconds (200)));
   Config::SetDefault ("ns3::Ipv4L3Protocol::FragmentExpirationTimeout", TimeValue (Seconds (0.2)));
   Config::SetDefault ("ns3::TcpSocket::SegmentSize", UintegerValue (1400));
@@ -188,14 +213,6 @@ main (int argc, char *argv[])
     
   // set to false to use the 3GPP radiation pattern (proper configuration of the bearing and downtilt angles is needed) 
   Config::SetDefault ("ns3::ThreeGppAntennaArrayModel::IsotropicElements", BooleanValue (true)); 
-  
-  double stopTime = 5.9;
-  double simStopTime = 7.00;
-  int nEnbs = 1;
-  int nUEs = 1;
-  double totalBandwidth = 500e6;
-  double frequency0 = 28e9;
-  Ipv4Address remoteHostAddr;
 
   // CC 0
   // 1. create MmWavePhyMacCommon object
@@ -210,12 +227,6 @@ main (int argc, char *argv[])
 
   std::map<uint8_t, MmWaveComponentCarrier> ccMap;
   ccMap [0] = *cc0;
-
-  // Command line arguments
-  CommandLine cmd;
-  cmd.AddValue("numUEs", "Number of UEs", nUEs);
-  cmd.AddValue("numEnbs", "Number of EnodeBs", nEnbs);
-  cmd.Parse (argc, argv);
 
   Ptr<MmWaveHelper> mmwaveHelper = CreateObject<MmWaveHelper> ();
   mmwaveHelper->SetCcPhyParams(ccMap);
@@ -291,7 +302,7 @@ main (int argc, char *argv[])
   ueIpIface = epcHelper->AssignUeIpv4Address (NetDeviceContainer (ueDevs));
 
   mmwaveHelper->AttachToClosestEnb (ueDevs, enbDevs);
-  // mmwaveHelper->EnableTraces ();
+  mmwaveHelper->EnableTraces ();
 
   // Set the default gateway for the UE
   for (int i = 0; i < nUEs; i++)
@@ -324,7 +335,7 @@ main (int argc, char *argv[])
   for (int i = 0; i < nUEs; i++)
   {
     Ptr<MyApp> app = CreateObject<MyApp> ();
-    app->Setup (ns3TcpSockets[i], sinkAddresses[i], 1400, 50000, DataRate ("2Gb/s"));
+    app->Setup (ns3TcpSockets[i], sinkAddresses[i], 1400, 500000, DataRate ("2Gb/s"));
     remoteHost->AddApplication (app);
 
     app->SetStartTime (Seconds (0.1));
@@ -335,9 +346,9 @@ main (int argc, char *argv[])
   for (int i = 0; i < nUEs; i++)
   {
     std::stringstream windowFileName;
-    windowFileName << "mmWave-tcp-window-" << i << ".txt";
+    windowFileName << "scripts/traces/" << congControl << "/mmWave-tcp-window-" << i << ".txt";
     std::stringstream dataFileName;
-    dataFileName << "mmWave-tcp-data-" << i << ".txt";
+    dataFileName << "scripts/traces/" << congControl << "/mmWave-tcp-data-" << i << ".txt";
     Ptr<OutputStreamWrapper> stream1 = asciiTraceHelper.CreateFileStream (windowFileName.str());
     ns3TcpSockets[i]->TraceConnectWithoutContext ("CongestionWindow", MakeBoundCallback (&CwndChange, stream1));
 

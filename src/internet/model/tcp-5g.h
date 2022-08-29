@@ -19,7 +19,7 @@
 #ifndef TCP5G_H
 #define TCP5G_H
 
-#include "ns3/tcp-congestion-ops.h"
+#include "ns3/tcp-cubic.h"
 #include "ns3/nstime.h"
 #include "ns3/simulator.h"
 #include "ns3/random-variable-stream.h"
@@ -30,7 +30,7 @@ namespace ns3 {
 /**
  * \brief The 5G implementation
  */
-class Tcp5G : public TcpCongestionOps
+class Tcp5G : public TcpCubic
 {
 public:
   /**
@@ -51,10 +51,8 @@ public:
 
   std::string GetName () const;
 
+  virtual void PktsAcked (Ptr<TcpSocketState> tcb, uint32_t segmentsAcked, const Time& rtt);
   virtual void IncreaseWindow (Ptr<TcpSocketState> tcb, uint32_t segmentsAcked);
-  virtual uint32_t GetSsThresh (Ptr<const TcpSocketState> tcb,
-                                uint32_t bytesInFlight);
-  virtual void ReduceCwnd (Ptr<TcpSocketState> tcb);
   virtual Ptr<TcpCongestionOps> Fork ();
   virtual void CwndEvent (Ptr<TcpSocketState> tcb,
                           const TcpSocketState::TcpCAEvent_t event);
@@ -65,7 +63,6 @@ public:
   } update_type;
 
 protected:
-  virtual uint32_t SlowStart (Ptr<TcpSocketState> tcb, uint32_t segmentsAcked);
   virtual void CongestionAvoidance (Ptr<TcpSocketState> tcb, uint32_t segmentsAcked);
 
   Time current_delay;
@@ -93,14 +90,10 @@ private:
   double safe_zone {0.0};
   double future_safezone {0.0};
 
-  int target_ratio {150};
   double m_delayMean {0};
   int m_cwndSum {0};
   double m_cwndMean {0};
   int m_cwndCount;
-
-  bool m_logStarted;
-  void LogState (Ptr<TcpSocketState> tcb);
 };
 
 } // namespace ns3
