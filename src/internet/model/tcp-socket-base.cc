@@ -4256,15 +4256,6 @@ void
 TcpSocketBase::UpdateSsThresh (uint32_t oldValue, uint32_t newValue)
 {
   m_ssThTrace (oldValue, newValue);
-  std::cout <<
-    "Time " <<
-    Simulator::Now() <<
-    ",ssThresh Changed" <<
-    ",oldValue " <<
-    oldValue <<
-    ",newValue " <<
-    newValue
-    << std::endl;
 }
 
 void

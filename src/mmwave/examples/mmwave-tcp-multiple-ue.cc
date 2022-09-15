@@ -38,6 +38,7 @@
 #include "ns3/applications-module.h"
 #include "ns3/point-to-point-helper.h"
 #include "ns3/config-store.h"
+#include "/h/176/yishanchra/research/5G/ns3-mmwave-5G/src/internet/model/tcp-socket-factory-impl.h"
 //#include "ns3/gtk-config-store.h"
 
 using namespace ns3;
@@ -147,8 +148,19 @@ static void Rx (Ptr<OutputStreamWrapper> stream, Ptr<const Packet> packet, const
   *stream->GetStream () << Simulator::Now ().GetSeconds () << "\t" << packet->GetSize () << std::endl;
 }
 
+static void SsThresholdChange (Ptr<OutputStreamWrapper> stream, uint32_t old, uint32_t now)
+{
+  *stream->GetStream () << Simulator::Now ().GetSeconds () << "\t" << old << "\t" << now << std::endl;
+}
+
+static void
+RttChange (Ptr<OutputStreamWrapper> stream, Time oldRtt, Time newRtt)
+{
+  *stream->GetStream () << Simulator::Now ().GetSeconds () << "\t" << oldRtt.GetSeconds () << "\t" << newRtt.GetSeconds () << std::endl;
+}
 
 void
+
 MyApp::ScheduleTx (void)
 {
   if (m_running)
@@ -168,21 +180,26 @@ CwndChange (Ptr<OutputStreamWrapper> stream, uint32_t oldCwnd, uint32_t newCwnd)
 int
 main (int argc, char *argv[])
 {
-  double stopTime = 5.9;
-  double simStopTime = 7.00;
+  double simStopTime = 50;
   int nEnbs = 1;
   int nUEs = 1;
   double totalBandwidth = 500e6;
   double frequency0 = 28e9;
+  int nPackets = 5e6;
   std::string congControl = "TcpCubic";
+  std::string result_folder = "scripts/traces/";
   bool logging = true;
+  bool movingUEs = false;
   Ipv4Address remoteHostAddr;
 
   // Command line arguments
   CommandLine cmd;
   cmd.AddValue("numUEs", "Number of UEs", nUEs);
   cmd.AddValue("numEnbs", "Number of EnodeBs", nEnbs);
+  cmd.AddValue("numPackets", "Number of packets", nPackets);
   cmd.AddValue("CongControl", "Congestion control to use", congControl);
+  cmd.AddValue("ResultFolder", "Root folder to store the logs", result_folder);
+  cmd.AddValue("movingUEs", "Enable moving UEs", movingUEs);
   cmd.AddValue("log", "Enable logging", logging);
   cmd.Parse (argc, argv);
 
@@ -193,9 +210,6 @@ main (int argc, char *argv[])
     LogComponentEnable("TcpCongestionOps", LOG_INFO);
     LogComponentEnable("TcpCubic", LOG_INFO);
   }
-
-  // Set directory for traces
-  Config::SetDefault("ns3::MmWaveBearerStatsCalculator::DlPdcpOutputFilename", StringValue("scripts/traces/" + congControl + "/DlPdcpStats.txt"));
 
   Config::SetDefault ("ns3::LteRlcUm::MaxTxBufferSize", UintegerValue (10 * 1024 * 1024));
   Config::SetDefault ("ns3::LteRlcAm::MaxTxBufferSize", UintegerValue (10 * 1024 * 1024));
@@ -253,7 +267,7 @@ main (int argc, char *argv[])
   PointToPointHelper p2ph;
   p2ph.SetDeviceAttribute ("DataRate", DataRateValue (DataRate ("100Gb/s")));
   p2ph.SetDeviceAttribute ("Mtu", UintegerValue (1500));
-  p2ph.SetChannelAttribute ("Delay", TimeValue (MicroSeconds (0)));
+  p2ph.SetChannelAttribute ("Delay", TimeValue (MilliSeconds (10)));
   NetDeviceContainer internetDevices = p2ph.Install (pgw, remoteHost);
   Ipv4AddressHelper ipv4h;
   ipv4h.SetBase ("1.0.0.0", "255.0.0.0");
@@ -273,23 +287,30 @@ main (int argc, char *argv[])
   // Install Mobility Model
   MobilityHelper enbmobility;
   Ptr<ListPositionAllocator> enbPositionAlloc = CreateObject<ListPositionAllocator> ();
-  enbPositionAlloc->Add (Vector (0.0, 0.0, 0.0));
+  enbPositionAlloc->Add (Vector (0.0, 0.0, 15));
   enbmobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
   enbmobility.SetPositionAllocator (enbPositionAlloc);
   enbmobility.Install (enbNodes);
 
   MobilityHelper uemobility;
-  Ptr<ListPositionAllocator> uePositionAlloc = CreateObject<ListPositionAllocator> ();
-  for (int i = 0; i < nUEs; i++)
+  if (!movingUEs)
   {
-    double x = rand() % 10;
-    double y = rand() % 10;
-    double z = rand() % 10;
-    uePositionAlloc->Add (Vector (x, y, z));
+    uemobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
   }
-  uemobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+  else
+  {
+    uemobility.SetMobilityModel (
+      "ns3::RandomWalk2dMobilityModel",
+      "Bounds", RectangleValue (Rectangle (-200, 200, -200, 200))
+    );
+  }
+
+  Ptr<UniformDiscPositionAllocator> uePositionAlloc = CreateObject<UniformDiscPositionAllocator> ();
+  uePositionAlloc->SetAttribute ("rho", DoubleValue (150));
+  uePositionAlloc->SetAttribute ("Z", DoubleValue(1.6));
   uemobility.SetPositionAllocator (uePositionAlloc);
   uemobility.Install (ueNodes);
+
 
   // Install LTE Devices to the nodes
   NetDeviceContainer enbDevs = mmwaveHelper->InstallEnbDevice (enbNodes);
@@ -302,7 +323,7 @@ main (int argc, char *argv[])
   ueIpIface = epcHelper->AssignUeIpv4Address (NetDeviceContainer (ueDevs));
 
   mmwaveHelper->AttachToClosestEnb (ueDevs, enbDevs);
-  mmwaveHelper->EnableTraces ();
+  // mmwaveHelper->EnableTraces ();
 
   // Set the default gateway for the UE
   for (int i = 0; i < nUEs; i++)
@@ -335,25 +356,36 @@ main (int argc, char *argv[])
   for (int i = 0; i < nUEs; i++)
   {
     Ptr<MyApp> app = CreateObject<MyApp> ();
-    app->Setup (ns3TcpSockets[i], sinkAddresses[i], 1400, 500000, DataRate ("2Gb/s"));
+    app->Setup (ns3TcpSockets[i], sinkAddresses[i], 1400, nPackets, DataRate ("2Gb/s"));
     remoteHost->AddApplication (app);
 
     app->SetStartTime (Seconds (0.1));
-    app->SetStopTime (Seconds (stopTime));
+    app->SetStopTime (Seconds (simStopTime));
   }
 
   AsciiTraceHelper asciiTraceHelper;
   for (int i = 0; i < nUEs; i++)
   {
     std::stringstream windowFileName;
-    windowFileName << "scripts/traces/" << congControl << "/mmWave-tcp-window-" << i << ".txt";
+    windowFileName << result_folder << congControl << "/mmWave-tcp-window-" << i << ".txt";
     std::stringstream dataFileName;
-    dataFileName << "scripts/traces/" << congControl << "/mmWave-tcp-data-" << i << ".txt";
+    dataFileName << result_folder << congControl << "/mmWave-tcp-data-" << i << ".txt";
+    std::stringstream ssThresholdFileName;
+    ssThresholdFileName << result_folder << congControl << "/mmWave-tcp-ssthresh-" << i << ".txt";
+    std::stringstream rttFileName;
+    rttFileName << result_folder << congControl << "/mmWave-tcp-rtt-" << i << ".txt";
+
     Ptr<OutputStreamWrapper> stream1 = asciiTraceHelper.CreateFileStream (windowFileName.str());
     ns3TcpSockets[i]->TraceConnectWithoutContext ("CongestionWindow", MakeBoundCallback (&CwndChange, stream1));
 
     Ptr<OutputStreamWrapper> stream2 = asciiTraceHelper.CreateFileStream (dataFileName.str());
     sinkApps.Get (i)->TraceConnectWithoutContext ("Rx", MakeBoundCallback (&Rx, stream2));
+
+    Ptr<OutputStreamWrapper> stream3 = asciiTraceHelper.CreateFileStream (ssThresholdFileName.str());
+    ns3TcpSockets[i]->TraceConnectWithoutContext ("SlowStartThreshold", MakeBoundCallback (&SsThresholdChange, stream3));
+
+    Ptr<OutputStreamWrapper> stream4 = asciiTraceHelper.CreateFileStream (rttFileName.str());
+    ns3TcpSockets[i]->TraceConnectWithoutContext ("RTT", MakeBoundCallback (&RttChange, stream4));
   }
 
   // p2ph.EnablePcapAll ("mmwave-sgi-capture");

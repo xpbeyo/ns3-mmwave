@@ -42,8 +42,9 @@ def read_trace(file_path, file_type):
         rx = pd.read_csv(file_path, delim_whitespace=True)[["start", "end", "RxBytes"]]
     elif (file_type == "DlPdcpStats_sampled"):
         rx = pd.read_csv(file_path, delim_whitespace=True)
-    elif(file_type == "TcpRx" or file_type == "BuilindTcpRx"):
-        rx = pd.read_csv(file_path, delim_whitespace=True)
+    elif(file_type in ["TcpRx", "BuildingTcpRx", "Rtt"]):
+        rx = np.genfromtxt(file_path)
+
     return rx
 
 def get_rate(rx):
@@ -138,9 +139,18 @@ def plot_attributes_by_cong_control(
     attributes,
     cong_controls,
     time_interval=0.075,
-    markers=["s", "p", "P", "*", "h"]
+    markers=["s", "p", "P", "*", "h"],
+    graph_filename="comparison.png",
+    base_dir="scripts/traces/",
 ):
-    fig, axes = plt.subplots(nrows=len(attributes), sharex=True)
+    assert(len(markers) >= len(cong_controls))
+    def get_style(index):
+        return {
+            "marker": markers[index],
+            "markersize": 0.5,
+            "linewidth": 0.4,
+        }
+    fig, axes = plt.subplots(nrows=len(attributes), sharex=True, figsize=(12, 8))
     plt.xlabel("Time(s)")
     for j in range(len(attributes)):
         axes[j].set_title(attributes[j])
@@ -148,27 +158,33 @@ def plot_attributes_by_cong_control(
             axes[j].set_ylabel("Mb/s")
             for k in range(len(cong_controls)):
                 rates = []
-                cong_dir = f"scripts/traces/{cong_controls[k]}"
-                data_sink_file = os.path.join(cong_dir, f"mmWave-tcp-data-0.txt")
+                data_sink_file = os.path.join(base_dir, cong_controls[k], "mmWave-tcp-data-0.txt")
                 if os.path.isfile(data_sink_file):
-                    rx_tcp = read_trace(data_sink_file, "TcpRx").values
+                    rx_tcp = read_trace(data_sink_file, "TcpRx")
                     rates = get_rate_smooth(rx_tcp, delta_t=time_interval)
-                    axes[j].plot(rates[:, 0], rates[:, 1], label=f"{cong_controls[k]}", marker=markers[k], linestyle='None')
+                    axes[j].plot(rates[:, 0], rates[:, 1], label=f"{cong_controls[k]}", **get_style(k))
         if attributes[j] == "rtt":
             axes[j].set_ylabel("ms")
             for k in range(len(cong_controls)):
-                cong_dir = f"scripts/traces/{cong_controls[k]}"
-                dlpdcpstats_file = os.path.join(cong_dir, "DlPdcpStats.txt")
-                if os.path.isfile(dlpdcpstats_file):
-                    dlpdcp = read_trace(dlpdcpstats_file, "DlPdcpStats")
-                    dlpdcp = dlpdcp[dlpdcp["action"]=="Rx"][["time", "delay"]]
-                    dlpdcp["delay"] = dlpdcp["delay"] / 1e6
-                    delays = sample_arr(dlpdcp.values, delta_t=time_interval)
-                    axes[j].plot(delays[:, 0], delays[:, 1], label=f"{cong_controls[k]}", marker=markers[k], linestyle='None')
+                rtt_file = os.path.join(base_dir, cong_controls[k], "mmWave-tcp-rtt-0.txt")
+                if os.path.isfile(rtt_file):
+                    rtt = read_trace(rtt_file, "Rtt")[:, 0:2]
+                    rtt[:, 1] = rtt[:, 1] * 1e3
+                    rtt = sample_arr(rtt, delta_t=time_interval)
+                    axes[j].plot(rtt[:, 0], rtt[:, 1], label=f"{cong_controls[k]}", **get_style(k))
         axes[j].legend()
-    plt.savefig(os.path.join("scripts", "comparison.png"))
+    plt.savefig(os.path.join(base_dir, graph_filename))
 
 if __name__ == "__main__":
-    cong_controls = ["TcpIllinois", "TcpVegas", "TcpCubic", "Tcp5G"]
+    # cong_controls = ["TcpIllinois", "TcpVegas", "TcpCubic", "Tcp5G"]
+    cong_controls = ["TcpCubic", "Tcp5G"]
+    # cong_controls = ["Tcp5G"]
     attributes = ["throughput", "rtt"]
-    plot_attributes_by_cong_control(attributes, cong_controls)
+    base_dirs = ["scripts/results/", "scripts/moving/"]
+    for base_dir in base_dirs:
+        plot_attributes_by_cong_control(
+            attributes,
+            cong_controls,
+            time_interval=0.5,
+            base_dir=base_dir,
+        )

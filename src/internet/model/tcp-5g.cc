@@ -91,7 +91,7 @@ namespace ns3 {
         target_ratio = (alpha * target_ratio) + (1 - alpha) * m_cwndMean;
 
         NS_LOG_DEBUG("Progressive Gaussian module activted: " << cons);
-        tcb->m_cWnd = std::max(std::min(target_ratio, MAX_CWND), MIN_CWND);
+        tcb->m_cWnd = std::max(std::min(target_ratio, MAX_CWND), MIN_CWND) * tcb->m_segmentSize;
       }
       else if (future_cat)
       {
@@ -175,15 +175,6 @@ namespace ns3 {
       ",m_cWnd " <<
       tcb->m_cWnd
     );
-
-    /* At this point, we could have segmentsAcked != 0. This because RFC says
-     * that in slow start, we should increase cWnd by min (N, SMSS); if in
-     * slow start we receive a cumulative ACK, it counts only for 1 SMSS of
-     * increase, wasting the others.
-     *
-     * // Incorrect assert, I am sorry
-     * NS_ASSERT (segmentsAcked == 0);
-     */
   }
 
   void
@@ -228,31 +219,14 @@ namespace ns3 {
   void
     Tcp5G::PeriodicUpdate(Ptr<TcpSocketState> tcb)
   {
-    current_delay = tcb->m_lastRtt.Get();
-    delay_var = tcb->m_lastRttVar.Get();
-    min_rtt = tcb->m_minRtt;
+    UpdateState(tcb);
 
-    // check for mili, micro and etc
-    if (rtt_threshold_factor != 0) {
-      bad_delay = rtt_threshold_factor * min_rtt;
-    }
-    delay_derivative = ((current_delay - prev_delay) / report_period).GetDouble();
-    if (abs(delay_derivative) < 0.02)
-    {
-      delay_derivative = 0;
-    }
-    safe_zone = 1 - ((current_delay - min_rtt) / bad_delay).GetDouble();
-    predicted_queueing_delay = delay_derivative * report_period;
-    if ((predicted_queueing_delay + current_delay - min_rtt) > bad_delay) {
-      future_cat = true;
-    }
-    else {
-      future_cat = false;
-    }
-    future_safezone = 1 - ((predicted_queueing_delay + current_delay - min_rtt) / bad_delay).GetDouble();
-    prev_delay = current_delay;
+    if (tcb->m_cWnd >= tcb->m_ssThresh)
+      {
+        CongestionAvoidance(tcb, 0);
+      }
 
-    Simulator::Schedule(report_period, &Tcp5G::PeriodicUpdate, this, tcb);
+    Simulator::Schedule(min_rtt, &Tcp5G::PeriodicUpdate, this, tcb);
   }
 
   void

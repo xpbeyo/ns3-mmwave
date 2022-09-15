@@ -67,7 +67,7 @@ protected:
 
   Time current_delay;
   Time delay_var;
-  Time min_rtt;
+  Time min_rtt {MilliSeconds(30)};
 
   // Periodic update variables
   bool m_periodicUpdateStarted {false};
